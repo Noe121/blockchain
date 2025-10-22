@@ -1,0 +1,40 @@
+version: '3.8'
+
+services:
+  # Blockchain Service (Python Lambda Functions) - DynamoDB Backend
+  blockchain-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.blockchain
+    container_name: blockchain-service
+    environment:
+      # DynamoDB Configuration (Production-ready)
+      DYNAMODB_TABLE: "nilbx-blockchain"
+      AWS_REGION: "us-east-1"
+      AWS_ACCESS_KEY_ID: "test"
+      AWS_SECRET_ACCESS_KEY: "test"
+      
+      # Blockchain Configuration (Test Environment)
+      INFURA_URL: "https://sepolia.infura.io/v3/your_project_id"
+      CHAIN_ID: "11155111"  # Sepolia testnet
+      NFT_CONTRACT_ADDRESS: "0x5FbDB2315678afecb367f032d93F642f64180aa3"
+      SPONSORSHIP_CONTRACT_ADDRESS: "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512"
+      
+      # Service Integration URLs
+      AUTH_SERVICE_URL: "http://localhost:9000"
+      API_SERVICE_URL: "http://localhost:8001"
+      COMPANY_API_URL: "http://localhost:8002"
+    ports:
+      - "8003:8000"  # Blockchain service port
+    volumes:
+      - ./lambda:/app/lambda
+      - ./contracts:/app/contracts
+      - ./test_data:/app/test_data
+    networks:
+      - blockchain-network
+    command: python -m uvicorn lambda.main:app --host 0.0.0.0 --port 8000 --reload
+
+networks:
+  blockchain-network:
+    driver: bridge
+    external: false

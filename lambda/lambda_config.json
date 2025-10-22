@@ -1,0 +1,27 @@
+{
+  "ethereum": {
+    "network": "sepolia",
+    "rpc_url_param": "/nilbx/ethereum/rpc_url",
+    "private_key_param": "/nilbx/ethereum/private_key"
+  },
+  "contracts": {
+    "player_legacy_nft": {
+      "address": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+      "abi_key": "PlayerLegacyNFT"
+    },
+    "sponsorship_contract": {
+      "address": "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512",
+      "abi_key": "SponsorshipContract"
+    }
+  },
+  "ipfs": {
+    "pinata_api_key_param": "/nilbx/ipfs/pinata_api_key",
+    "pinata_secret_param": "/nilbx/ipfs/pinata_secret",
+    "gateway_url": "https://gateway.pinata.cloud/ipfs/"
+  },
+  "aws": {
+    "region": "us-east-1",
+    "lambda_timeout": 300,
+    "memory_size": 512
+  }
+}

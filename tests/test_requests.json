@@ -1,0 +1,54 @@
+{
+  "mint_nft_request": {
+    "method": "POST",
+    "url": "/mint-nft",
+    "body": {
+      "athlete_address": "0x742d35Cc6634C0532925a3b8D8e9F6A3f0C2f2A8",
+      "recipient_address": "0x742d35Cc6634C0532925a3b8D8e9F6A3f0C2f2A8",
+      "token_uri": "https://gateway.pinata.cloud/ipfs/QmSampleHash",
+      "royalty_fee": 500
+    }
+  },
+  "create_task_request": {
+    "method": "POST",
+    "url": "/create-task",
+    "body": {
+      "athlete_address": "0x742d35Cc6634C0532925a3b8D8e9F6A3f0C2f2A8",
+      "description": "Social media promotion campaign",
+      "amount_eth": 0.1
+    }
+  },
+  "upload_metadata_request": {
+    "method": "POST",
+    "url": "/upload-metadata",
+    "body": {
+      "athlete_name": "Test Athlete",
+      "athlete_id": "123",
+      "description": "Test Legacy NFT",
+      "image_url": "https://example.com/test-athlete.jpg",
+      "attributes": [
+        {"trait_type": "Sport", "value": "Basketball"},
+        {"trait_type": "Position", "value": "Guard"}
+      ]
+    }
+  },
+  "create_athlete_nft_request": {
+    "method": "POST",
+    "url": "/create-athlete-nft",
+    "headers": {
+      "Authorization": "Bearer YOUR_AUTH_TOKEN"
+    },
+    "body": {
+      "athlete_id": "123",
+      "nft_data": {
+        "description": "Test Athlete Legacy NFT",
+        "image_url": "https://example.com/test-athlete.jpg",
+        "royalty_fee": 500,
+        "attributes": [
+          {"trait_type": "Sport", "value": "Basketball"},
+          {"trait_type": "Position", "value": "Guard"}
+        ]
+      }
+    }
+  }
+}

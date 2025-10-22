@@ -1,0 +1,22 @@
+{
+  "name": "nilbx-blockchain-lambda",
+  "version": "1.0.0",
+  "description": "AWS Lambda functions for NILbx blockchain integration",
+  "main": "blockchain_handler.py",
+  "dependencies": {
+    "web3": "^6.12.0",
+    "aws-sdk": "^2.1691.0"
+  },
+  "devDependencies": {
+    "serverless": "^3.38.0"
+  },
+  "scripts": {
+    "deploy": "serverless deploy",
+    "invoke-local": "serverless invoke local",
+    "test": "python -m pytest tests/",
+    "package": "zip -r lambda-deployment.zip ."
+  },
+  "keywords": ["blockchain", "ethereum", "nft", "sponsorship", "nil", "lambda"],
+  "author": "NILbx Team",
+  "license": "MIT"
+}

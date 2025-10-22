@@ -1,0 +1,52 @@
+# Cache directories
+cache/
+artifacts/
+typechain-types/
+
+# Build outputs
+build/
+dist/
+
+# Dependencies
+node_modules/
+
+# Environment files
+.env
+.env.local
+.env.development
+.env.production
+
+# IDE files
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Hardhat files
+deployments/
+coverage/
+coverage.json
+
+# Gas usage reports
+gas-report.txt
+
+# Temporary files
+*.tmp
+*.temp
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Hardhat network files
+hardhat-network.json
+
+# Solidity flat files
+flattened/
+
+# Documentation
+docs/generated/

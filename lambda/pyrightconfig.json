@@ -1,0 +1,11 @@
+{
+  "include": ["."],
+  "exclude": ["__pycache__", ".pytest_cache", "node_modules"],
+  "pythonVersion": "3.9",
+  "typeCheckingMode": "basic",
+  "reportMissingImports": "warning",
+  "reportMissingTypeStubs": "warning",
+  "reportImportCycles": "warning",
+  "reportUnusedImport": "warning",
+  "reportAttributeAccessIssue": "warning"
+}
