@@ -878,7 +878,7 @@ curl https://${api_gateway_id}.execute-api.us-east-1.amazonaws.com/prod/health
 **API Gateway**: Active with 4 endpoints  
 **Smart Contracts**: Compiled and tested on Sepolia  
 **Database**: DynamoDB single-table design (95-98% cost reduction)  
-**Last Updated**: October 22, 2025  
+**Last Updated**: October 24, 2025  
 **Python Version**: 3.9+ (Lambda runtime)  
 **Node/Solc Version**: Latest stable
 
