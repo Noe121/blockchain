@@ -1,5 +1,5 @@
-# Use AWS Lambda Python 3.9 base image for compatibility
-FROM public.ecr.aws/lambda/python:3.9
+# Use AWS Lambda Python 3.13 base image
+FROM public.ecr.aws/lambda/python:3.13
 
 # Install zip utility
 RUN yum install -y zip

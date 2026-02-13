@@ -148,7 +148,7 @@ EOF
     # Create Lambda function
     aws lambda create-function \
         --function-name "$LAMBDA_FUNCTION_NAME" \
-        --runtime python3.9 \
+        --runtime python3.13 \
         --role "$ROLE_ARN" \
         --handler main.app \
         --zip-file fileb://lambda-deployment.zip \

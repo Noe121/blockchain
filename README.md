@@ -18,7 +18,7 @@ This blockchain service provides smart contract integration for the NIL applicat
 ### AWS Infrastructure
 - **Environment**: Development (dev-nilbx-*)
 - **Region**: us-east-1
-- **Runtime**: Python 3.9 (AWS Lambda)
+- **Runtime**: Python 3.13 (AWS Lambda)
 - **API Gateway**: 4 active endpoints (blockchain, IPFS, integration, fee management)
 - **Secrets Manager**: Configured for blockchain credentials
 - **CloudWatch**: Monitoring and logging enabled
@@ -969,4 +969,3 @@ The `./manage.sh` script provides a unified interface for all blockchain operati
 - **Last Deployment**: October 21, 2025
 - **Environment**: Development
 - **Region**: us-east-1
-
