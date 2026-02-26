@@ -2,21 +2,54 @@ import json
 import os
 import logging
 from typing import Dict, Any, List, Optional
+from urllib.parse import urlparse
 
 # Configure logging
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
+_SSRF_BLOCKED_HOSTS = frozenset({
+    "169.254.169.254",
+    "metadata.google.internal",
+    "metadata.internal",
+    "fd00:ec2::254",
+})
+_ENV = os.getenv("ENVIRONMENT", "development").strip().lower()
+_LOCAL_ENVS = {"local", "test", "dev", "development"}
+
+
+def _validated_base_url(value: Optional[str], name: str) -> Optional[str]:
+    if not value:
+        return None
+    parsed = urlparse(value)
+    if parsed.scheme not in {"http", "https"}:
+        raise ValueError(f"{name} must use http/https")
+    if not parsed.netloc:
+        raise ValueError(f"{name} is missing host")
+    host = (parsed.hostname or "").lower()
+    if host in _SSRF_BLOCKED_HOSTS:
+        raise ValueError(f"{name} points to blocked SSRF-dangerous host {host!r}")
+    if _ENV not in _LOCAL_ENVS and parsed.scheme != "https":
+        # Internal service DNS names may still be HTTP in some deployments;
+        # keep compatibility by allowing explicit opt-out.
+        allow_http = os.getenv("BLOCKCHAIN_ALLOW_HTTP_INTERNAL_SERVICES", "false").lower() == "true"
+        if not allow_http:
+            raise ValueError(
+                f"{name} must use https in non-local environments "
+                "(or set BLOCKCHAIN_ALLOW_HTTP_INTERNAL_SERVICES=true temporarily)"
+            )
+    return value.rstrip("/")
+
 class NILIntegrationService:
     def __init__(self):
         # API endpoints for existing services
-        self.auth_service_url = os.environ.get('AUTH_SERVICE_URL', 'http://localhost:3001')
-        self.api_service_url = os.environ.get('API_SERVICE_URL', 'http://localhost:3000')
-        self.company_api_url = os.environ.get('COMPANY_API_URL', 'http://localhost:3002')
+        self.auth_service_url = _validated_base_url(os.environ.get('AUTH_SERVICE_URL', 'http://localhost:3001'), 'AUTH_SERVICE_URL')
+        self.api_service_url = _validated_base_url(os.environ.get('API_SERVICE_URL', 'http://localhost:3000'), 'API_SERVICE_URL')
+        self.company_api_url = _validated_base_url(os.environ.get('COMPANY_API_URL', 'http://localhost:3002'), 'COMPANY_API_URL')
         
         # Blockchain Lambda endpoints
-        self.blockchain_lambda_url = os.environ.get('BLOCKCHAIN_LAMBDA_URL')
-        self.ipfs_lambda_url = os.environ.get('IPFS_LAMBDA_URL')
+        self.blockchain_lambda_url = _validated_base_url(os.environ.get('BLOCKCHAIN_LAMBDA_URL'), 'BLOCKCHAIN_LAMBDA_URL')
+        self.ipfs_lambda_url = _validated_base_url(os.environ.get('IPFS_LAMBDA_URL'), 'IPFS_LAMBDA_URL')
 
     def _make_api_request(self, url: str, method: str = 'GET', data: Optional[Dict] = None, 
                          headers: Optional[Dict] = None) -> Dict[str, Any]:
@@ -28,11 +61,11 @@ class NILIntegrationService:
                 headers = {'Content-Type': 'application/json'}
                 
             if method == 'GET':
-                response = requests.get(url, headers=headers)
+                response = requests.get(url, headers=headers, timeout=10, allow_redirects=False)
             elif method == 'POST':
-                response = requests.post(url, json=data, headers=headers)
+                response = requests.post(url, json=data, headers=headers, timeout=10, allow_redirects=False)
             elif method == 'PUT':
-                response = requests.put(url, json=data, headers=headers)
+                response = requests.put(url, json=data, headers=headers, timeout=10, allow_redirects=False)
             else:
                 raise ValueError(f"Unsupported HTTP method: {method}")
                 

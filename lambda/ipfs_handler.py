@@ -49,7 +49,13 @@ class IPFSService:
                 }
             }
             
-            response = requests.post(url, json=payload, headers=headers)
+            response = requests.post(
+                url,
+                json=payload,
+                headers=headers,
+                timeout=15,
+                allow_redirects=False,
+            )
             response.raise_for_status()
             
             result = response.json()

@@ -5,11 +5,14 @@ import os
 import sys
 import json
 import logging
-from typing import Optional, Dict, Any
-from fastapi import FastAPI, HTTPException, Request
+import hmac
+import re
+from typing import Optional, Dict, Any, Literal
+from urllib.parse import urlparse
+from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, validator
 
 # AWS Lambda handler using Mangum
 from mangum import Mangum
@@ -50,6 +53,48 @@ except ImportError as e:
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+_ENV = os.getenv("ENVIRONMENT", "development").strip().lower()
+_LOCAL_ENVS = {"local", "test", "dev", "development"}
+_WRAPPER_AUTH_TOKEN = os.getenv("BLOCKCHAIN_WRAPPER_BEARER_TOKEN", "").strip()
+_ETH_ADDRESS_RE = re.compile(r"^0x[a-fA-F0-9]{40}$")
+
+
+def _cors_allowed_origins() -> list[str]:
+    raw = os.getenv("CORS_ALLOWED_ORIGINS", "")
+    parsed = [o.strip() for o in raw.split(",") if o.strip()]
+    if parsed:
+        return parsed
+    if _ENV in _LOCAL_ENVS:
+        return [
+            "http://localhost:3000",
+            "http://localhost:5173",
+            "http://localhost:8080",
+        ]
+    raise RuntimeError("CORS_ALLOWED_ORIGINS must be set in non-local environments")
+
+
+def _is_valid_eth_address(value: str) -> bool:
+    return bool(_ETH_ADDRESS_RE.fullmatch((value or "").strip()))
+
+
+def _validate_token_uri(value: str) -> str:
+    raw = (value or "").strip()
+    if not raw:
+        raise ValueError("token_uri is required")
+    if len(raw) > 2048:
+        raise ValueError("token_uri exceeds max length (2048)")
+    parsed = urlparse(raw)
+    if parsed.scheme in {"https", "ipfs"}:
+        return raw
+    raise ValueError("token_uri must use https:// or ipfs://")
+
+
+def _validate_eth_address_field(value: str, field_name: str) -> str:
+    addr = (value or "").strip()
+    if not _is_valid_eth_address(addr):
+        raise ValueError(f"{field_name} must be a valid 0x-prefixed Ethereum address")
+    return addr
+
 # FastAPI app
 app = FastAPI(
     title="Blockchain Service - Local Testing",
@@ -60,48 +105,106 @@ app = FastAPI(
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_cors_allowed_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def wrapper_auth_middleware(request: Request, call_next):
+    path = request.url.path
+    if request.method == "OPTIONS" or path in {"/", "/health"}:
+        return await call_next(request)
+    if path.startswith("/docs") or path.startswith("/openapi"):
+        return await call_next(request)
+
+    if not _WRAPPER_AUTH_TOKEN:
+        if _ENV in _LOCAL_ENVS:
+            return await call_next(request)
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content={"detail": "BLOCKCHAIN_WRAPPER_BEARER_TOKEN is not configured"},
+        )
+
+    authz = request.headers.get("Authorization", "")
+    if not authz.lower().startswith("bearer "):
+        return JSONResponse(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            content={"detail": "Bearer token required"},
+        )
+    token = authz.split(" ", 1)[1].strip()
+    if not token or not hmac.compare_digest(token, _WRAPPER_AUTH_TOKEN):
+        return JSONResponse(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            content={"detail": "Invalid bearer token"},
+        )
+    return await call_next(request)
 
 # Pydantic models
 class NFTMintRequest(BaseModel):
     athlete_address: str
     recipient_address: str
     token_uri: str
-    royalty_fee: int = 500
+    royalty_fee: int = Field(default=500, ge=0, le=1000)
+
+    @validator("athlete_address")
+    def _validate_athlete_address(cls, v: str) -> str:
+        return _validate_eth_address_field(v, "athlete_address")
+
+    @validator("recipient_address")
+    def _validate_recipient_address(cls, v: str) -> str:
+        return _validate_eth_address_field(v, "recipient_address")
+
+    @validator("token_uri")
+    def _validate_token_uri_field(cls, v: str) -> str:
+        return _validate_token_uri(v)
 
 class SponsorshipTaskRequest(BaseModel):
     athlete_address: str
-    description: str
-    amount_eth: float
+    description: str = Field(..., min_length=1, max_length=1000)
+    amount_eth: float = Field(..., gt=0, le=1000000)
+
+    @validator("athlete_address")
+    def _validate_task_athlete_address(cls, v: str) -> str:
+        return _validate_eth_address_field(v, "athlete_address")
+
+    @validator("description")
+    def _sanitize_description(cls, v: str) -> str:
+        return v.strip()
 
 class TaskApprovalRequest(BaseModel):
-    task_id: int
+    task_id: int = Field(..., ge=1)
 
 class DeployContractRequest(BaseModel):
-    user_id: int
-    user_type: str  # "athlete" or "sponsor"
-    contract_type: str  # "sponsorship", "nft", "custom"
-    fee_usd: float = 12.50  # $10-15 range
-    payment_method: str = "stripe"  # "stripe", "crypto", "wallet"
+    user_id: int = Field(..., ge=1)
+    user_type: Literal["athlete", "sponsor"]
+    contract_type: Literal["sponsorship", "nft", "custom"]
+    fee_usd: float = Field(default=12.50, gt=0, le=10000)
+    payment_method: Literal["stripe", "crypto", "wallet"] = "stripe"
 
 class SubscribeRequest(BaseModel):
-    user_id: int
-    user_type: str  # "athlete" or "sponsor"
-    plan_name: str = "monitoring"  # "monitoring", "analytics", "premium"
-    billing_cycle: str = "monthly"  # "monthly", "quarterly", "annual"
-    payment_method: str = "stripe"  # "stripe", "crypto"
+    user_id: int = Field(..., ge=1)
+    user_type: Literal["athlete", "sponsor"]
+    plan_name: Literal["monitoring", "analytics", "premium"] = "monitoring"
+    billing_cycle: Literal["monthly", "quarterly", "annual"] = "monthly"
+    payment_method: Literal["stripe", "crypto"] = "stripe"
 
 class PremiumFeatureRequest(BaseModel):
-    user_id: int
-    user_type: str  # "athlete" or "sponsor"
-    feature_name: str  # "custom_contract", "priority_oracle", "advanced_analytics", etc.
-    feature_fee_usd: float  # $5-10 per feature
-    payment_method: str = "stripe"  # "stripe", "crypto", "wallet"
+    user_id: int = Field(..., ge=1)
+    user_type: Literal["athlete", "sponsor"]
+    feature_name: str = Field(..., min_length=1, max_length=100)
+    feature_fee_usd: float = Field(..., ge=5.0, le=10.0)
+    payment_method: Literal["stripe", "crypto", "wallet"] = "stripe"
     feature_config: Optional[Dict[str, Any]] = None
+
+    @validator("feature_name")
+    def _validate_feature_name(cls, v: str) -> str:
+        cleaned = v.strip()
+        if not re.fullmatch(r"[a-zA-Z0-9_.:-]+", cleaned):
+            raise ValueError("feature_name contains invalid characters")
+        return cleaned
 
 # Health check
 @app.get("/")
@@ -150,6 +253,8 @@ async def mint_nft(request: NFTMintRequest):
 async def get_athlete_nfts(athlete_address: str):
     if not BLOCKCHAIN_AVAILABLE:
         raise HTTPException(status_code=503, detail="Blockchain handler not available")
+    if not _is_valid_eth_address(athlete_address):
+        raise HTTPException(status_code=400, detail="Invalid athlete address")
     
     event = {
         "httpMethod": "GET", 
@@ -369,6 +474,8 @@ async def get_fee_analytics():
 async def get_task(task_id: int):
     if not BLOCKCHAIN_AVAILABLE:
         raise HTTPException(status_code=503, detail="Blockchain handler not available")
+    if task_id < 1:
+        raise HTTPException(status_code=400, detail="task_id must be >= 1")
     
     event = {
         "httpMethod": "GET",
