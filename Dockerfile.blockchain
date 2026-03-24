@@ -1,45 +1,43 @@
-FROM python:3.11-slim
+# ---------- builder stage ----------
+FROM python:3.11-slim AS builder
 
-# Set working directory
-WORKDIR /app
+WORKDIR /build
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     default-libmysqlclient-dev \
     pkg-config \
+ && rm -rf /var/lib/apt/lists/*
+
+COPY blockchain/lambda/requirements.txt .
+RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
+RUN pip install --no-cache-dir --prefix=/install fastapi uvicorn python-multipart pymysql python-dotenv
+
+# ---------- runtime stage ----------
+FROM python:3.11-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    default-libmysqlclient-dev \
     curl \
-    && rm -rf /var/lib/apt/lists/*
+ && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements first for better caching
-COPY lambda/requirements.txt /app/requirements.txt
+COPY --from=builder /install /usr/local
 
-# Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+RUN groupadd -r appuser && useradd -r -g appuser -d /app -s /sbin/nologin appuser
+WORKDIR /app
 
-# Install additional packages for local testing
-RUN pip install fastapi uvicorn python-multipart pymysql python-dotenv
+COPY --chown=appuser:appuser blockchain/lambda/ ./lambda/
+COPY --chown=appuser:appuser blockchain/contracts/ ./contracts/
+COPY --chown=appuser:appuser blockchain/database/ ./database/
 
-# Copy application code
-COPY lambda/ /app/lambda/
-COPY contracts/ /app/contracts/
-COPY database/ /app/database/
+RUN mkdir -p /app/logs /app/test_data && chown -R appuser:appuser /app/logs /app/test_data
 
-# Create directories for logs and data
-RUN mkdir -p /app/logs /app/test_data
+USER appuser
 
-# Copy test data and scripts if they exist (optional)
-# COPY test_data/ /app/test_data/
-
-# Set permissions
-RUN chmod +x /app/lambda/main.py
-
-# Expose port
 EXPOSE 8000
 
-# Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
-# Default command
-CMD ["python", "-m", "uvicorn", "lambda.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+# Production mode — no --reload
+CMD ["python", "-m", "uvicorn", "lambda.main:app", "--host", "0.0.0.0", "--port", "8000"]
