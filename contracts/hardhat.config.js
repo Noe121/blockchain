@@ -75,7 +75,7 @@ module.exports = {
     disambiguatePaths: false,
     runOnCompile: true,
     strict: true,
-    only: [":PlayerLegacyNFT$", ":SponsorshipContract$"]
+    only: [":PlayerLegacyNFT$", ":SponsorshipContract$", ":ContractAnchor$"]
   },
   etherscan: {
     apiKey: process.env.ETHERSCAN_API_KEY

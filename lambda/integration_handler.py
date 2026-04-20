@@ -4,6 +4,19 @@ import logging
 from typing import Dict, Any, List, Optional
 from urllib.parse import urlparse
 
+try:
+    from event_verification import (
+        EventSignatureError,
+        require_event_hmac_key,
+        sign_body_bytes,
+    )
+except ImportError:  # pragma: no cover
+    EventSignatureError = Exception  # type: ignore
+    def require_event_hmac_key(_name: str) -> str:  # type: ignore
+        return ""
+    def sign_body_bytes(_body: bytes, _key: str) -> Dict[str, str]:  # type: ignore
+        return {}
+
 # Configure logging
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -14,8 +27,14 @@ _SSRF_BLOCKED_HOSTS = frozenset({
     "metadata.internal",
     "fd00:ec2::254",
 })
-_ENV = os.getenv("ENVIRONMENT", "development").strip().lower()
-_LOCAL_ENVS = {"local", "test", "dev", "development"}
+_ENV = os.getenv("ENVIRONMENT", "production").strip().lower()
+_LOCAL_ENVS = {"local", "test", "dev", "development", "testing"}
+
+# Boot-fail outside dev if HMAC key for outbound api-service calls is missing.
+# api-service may not verify yet — that's fine, no breaking change — but the
+# signature headers must be attached so symmetric verification can be turned
+# on as a config flip.
+_API_HMAC_KEY = require_event_hmac_key("BLOCKCHAIN_API_HMAC_KEY")
 
 
 def _validated_base_url(value: Optional[str], name: str) -> Optional[str]:
@@ -51,27 +70,48 @@ class NILIntegrationService:
         self.blockchain_lambda_url = _validated_base_url(os.environ.get('BLOCKCHAIN_LAMBDA_URL'), 'BLOCKCHAIN_LAMBDA_URL')
         self.ipfs_lambda_url = _validated_base_url(os.environ.get('IPFS_LAMBDA_URL'), 'IPFS_LAMBDA_URL')
 
-    def _make_api_request(self, url: str, method: str = 'GET', data: Optional[Dict] = None, 
+    def _make_api_request(self, url: str, method: str = 'GET', data: Optional[Dict] = None,
                          headers: Optional[Dict] = None) -> Dict[str, Any]:
-        """Make HTTP request to API service"""
+        """Make HTTP request to an internal service, attaching outbound HMAC.
+
+        Headers added on POST/PUT bodies:
+            X-Service-Signature  — hex sha256 hmac of the JSON body
+            X-Service-Issued-At  — iso-8601 timestamp
+        api-service may adopt verification later — no breaking change yet.
+        """
         try:
             import requests
-            
+
             if headers is None:
                 headers = {'Content-Type': 'application/json'}
-                
+
             if method == 'GET':
                 response = requests.get(url, headers=headers, timeout=10, allow_redirects=False)
-            elif method == 'POST':
-                response = requests.post(url, json=data, headers=headers, timeout=10, allow_redirects=False)
-            elif method == 'PUT':
-                response = requests.put(url, json=data, headers=headers, timeout=10, allow_redirects=False)
+            elif method in ('POST', 'PUT'):
+                body_bytes = b""
+                if data is not None:
+                    body_bytes = json.dumps(data, separators=(",", ":"), sort_keys=True).encode("utf-8")
+                    if _API_HMAC_KEY:
+                        try:
+                            headers = {**headers, **sign_body_bytes(body_bytes, _API_HMAC_KEY)}
+                        except Exception as sign_err:
+                            logger.warning("outbound_sign_skipped err=%s", sign_err)
+                # Send the pre-serialized body so the signature matches what
+                # the server will receive byte-for-byte.
+                response = requests.request(
+                    method,
+                    url,
+                    data=body_bytes if data is not None else None,
+                    headers=headers,
+                    timeout=10,
+                    allow_redirects=False,
+                )
             else:
                 raise ValueError(f"Unsupported HTTP method: {method}")
-                
+
             response.raise_for_status()
             return response.json()
-            
+
         except Exception as e:
             logger.error(f"API request failed: {str(e)}")
             raise
@@ -473,7 +513,7 @@ def lambda_handler(event, context):
         }
         
     except Exception as e:
-        logger.error(f"Integration Lambda handler error: {str(e)}")
+        logger.exception("Integration Lambda handler error")
         return {
             'statusCode': 500,
             'headers': {
@@ -482,6 +522,7 @@ def lambda_handler(event, context):
             },
             'body': json.dumps({
                 'success': False,
-                'error': str(e)
+                'code': 'internal_error',
+                'type': type(e).__name__,
             })
         }
